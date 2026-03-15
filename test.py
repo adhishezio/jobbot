@@ -3,7 +3,7 @@ import fitz  # PyMuPDF
 import os
 
 # 1. Use the exact same API key you are using in n8n!
-genai.configure(api_key="AIzaSyDlpGM4WpbGl3w_I1gxybUopuASFd3AJEI")
+genai.configure(api_key="")
 
 def extract_and_structure_resume(pdf_path):
     print("📄 Reading PDF...")
