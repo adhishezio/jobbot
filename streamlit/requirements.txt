@@ -1,0 +1,6 @@
+streamlit
+psycopg2-binary
+requests
+pandas
+google-generativeai
+Pillow

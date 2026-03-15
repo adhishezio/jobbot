@@ -1,0 +1,112 @@
+version: '3.8'
+
+volumes:
+  postgres_data:
+  n8n_data:
+  ollama_data:
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: jobbot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jobbot
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.8.3
+    container_name: jobbot_n8n
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DB_TYPE=postgresdb 
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=fs,path,http,https
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=http://${LAN_IP}:5678/
+      - GENERIC_TIMEZONE=Europe/Berlin
+      
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./files:/files
+      - ./templates:/templates
+      - ./assets:/assets   
+    depends_on:
+      postgres:
+        condition: service_healthy
+      latex2pdf:
+        condition: service_started
+    networks:
+      - jobbot
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jobbot_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - jobbot
+
+  streamlit:
+    build: ./streamlit
+    container_name: jobbot_streamlit
+    ports:
+      - "8501:8501"
+    env_file:         
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - N8N_WEBHOOK_BASE_URL=http://n8n:5678/webhook
+      - N8N_INTERNAL_URL=http://n8n:5678
+    volumes:
+      - ./files:/files:ro
+      - ./screenshots:/screenshots:ro
+    depends_on:
+      - postgres
+      - n8n
+    networks:
+      - jobbot
+    restart: unless-stopped
+
+  latex2pdf:
+    image: lennetech/latex2pdf
+    container_name: jobbot_latex2pdf
+    ports:
+      - "8080:80"
+    volumes:
+      - ./assets:/assets:ro
+    networks:
+      - jobbot
+    restart: unless-stopped
+
+# Notice how this is pushed ALL the way to the left margin!
+networks:
+  jobbot:
+    driver: bridge

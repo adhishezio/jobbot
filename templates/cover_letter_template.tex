@@ -1,0 +1,69 @@
+\documentclass[11pt]{letter}
+\usepackage[utf8]{inputenc}
+\usepackage[empty]{fullpage}
+\usepackage[hidelinks]{hyperref}
+\usepackage{graphicx}
+\usepackage{fontawesome5}
+\usepackage{eso-pic}
+\usepackage{charter}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\definecolor{UI_blue}{RGB}{32, 64, 151}
+\definecolor{gr}{RGB}{225,225,225}
+
+\addtolength{\topmargin}{-0.8in}
+\addtolength{\textheight}{1.8in}
+
+\begin{document}
+
+\AddToShipoutPictureBG{%
+  \color{gr}
+  \AtPageUpperLeft{\rule[-1.0in]{\paperwidth}{1.1in}}
+}
+
+% Header
+\begin{center}
+    {\fontsize{24}{0}\selectfont\scshape \textcolor{UI_blue}{Adhish Anitha Vilasan}}\\
+    \vspace{0.1in}
+    \small
+    \textcolor{UI_blue}{\href{mailto:avadhishj@gmail.com}{\faEnvelope\enspace avadhishj@gmail.com} \quad
+    \href{tel:+4915219432100}{\faPhone\enspace +49 15219432100} \quad
+    \faMapMarker\enspace Passau, Germany}
+\end{center}
+
+% Add vertical spacing to avoid overlap
+\vspace{0.3in}
+
+<<DATE>>\\
+
+\vspace{-0.1in}
+<<TO_COMPANY>>\\
+<<TO_DEPARTMENT>><<TO_STREET>>\\
+<<TO_PLZ_CITY>>\\
+
+\vspace{-0.1in}
+\textbf{Subject: Application for <<POSITION>>}\\
+
+\vspace{-0.1in} <<SALUTATION>>\\
+
+\vspace{-0.1in}
+\setlength\parindent{20pt}
+\noindent <<PARA_ONE>>
+
+\vspace{0.1in}
+\noindent <<PARA_TWO>>
+
+\vspace{0.1in}
+\noindent <<PARA_THREE>>
+
+\vspace{0.2in}
+
+\begin{flushright}
+<<CLOSING>>,\\
+\vspace{0.1in}
+\includegraphics[width=0.9in]{/assets/signature.png}\\
+Adhish Anitha Vilasan
+\end{flushright}
+
+\end{document}

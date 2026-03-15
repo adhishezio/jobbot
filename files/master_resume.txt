@@ -1,0 +1,123 @@
+ADHISH ANITHA VILASAN
+Machine Learning Engineer | Data Scientist
+
+Contact Information
+
+
+Address: Wörthstraße 8, 94032 Passau, Germany 
+
+Phone: +49 15219432100 
+
+Email: avadhishj@gmail.com 
+
+LinkedIn: linkedin.com/in/avadhish 
+
+
+GitHub: github.com/adhishezio 
+
+Docker Hub: hub.docker.com/u/avadhish 
+
+Summary
+Machine Learning Engineer with over 3 years of experience in AI-driven computer vision and autonomous systems. Proficient in Python, PyTorch, and OpenCV, with a strong background in image processing and deep learning. 
+
+WORK EXPERIENCE
+Master Thesis | Data Scientist
+Knorr-Bremse Systeme für Nutzfahrzeuge GmbH, Passau | 03/2024 – 10/2024 
+
+Developed a defect detection system for laser-engraved nameplates achieving 91.33% accuracy and 100% recall. 
+
+Deployed Vision Transformer (ViT) model for industrial high-speed string verification in production. 
+
+
+Built end-to-end AI vision system using YOLOv7, ResVAE, Tesseract OCR with FastAPI endpoint. 
+
+Trained and optimized models on Azure Machine Learning Studio for enhanced performance. 
+
+Documented development process following CRISP-DM methodology for project management. 
+
+Working Student | Machine Learning Engineer
+Veridos GmbH, Munich | 07/2023 – 02/2024 
+
+Engineered PyTorch image classification model for federated learning with 20% accuracy improvement. 
+
+Developed object detection model to localize the eye region (ROI) in Near Infrared (NIR) images, achieving 98% accuracy. 
+
+Trained anomaly detection model to identify document anomalies, ensuring high processing reliability. 
+
+Designed and implemented PyQt-based GUI for the anomaly detection system. 
+
+Internship | Computer Vision Engineer - Autonomous Systems
+municHMotorsport e. V., Munich | 02/2023 – 06/2023 
+
+Developed robust perception pipeline for driverless system integrating computer vision nodes with ROS. 
+
+Created YOLO-based object detection model (99% accuracy) fused with LIDAR 3D point cloud data. 
+
+Optimized system performance on NVIDIA Jetson Orin for real-time execution. 
+
+Managed development lifecycle including camera calibration, unit testing, Git, and Docker. 
+
+Junior Production Engineer
+Dawn Hospital Goods, India | 08/2020 – 05/2021 
+
+Designed, procured, and created functional prototypes using CATIA V5 based on client requirements. 
+
+EDUCATION
+Master of Engineering Sciences - Mechatronics | 10/2021 – 07/2025 Technische Hochschule Rosenheim 
+
+Focus: Image Processing, Machine Learning. 
+
+Bachelor of Technology - Mechanical Engineering | 08/2016 – 05/2020 SRM Institute of Science and Technology 
+
+PROJECTS
+SOFIA: Conversational AI Assistant | 05/2025 – 07/2025 
+Engineered voice-driven AI assistant with real-time capabilities using LiveKit Agents Framework. 
+
+Implemented RAG architecture with ChromaDB for persistent memory and personalized interactions. 
+
+Integrated function-calling tools for web searches, weather retrieval, and email composition. 
+
+The Curious Curator: Interactive AI Encyclopedia | 04/2025 – 05/2025 
+
+Developed multi-modal AI agent for object identification using OpenAI CLIP and conversational Q&A. 
+
+Built user-curated knowledge base with RAG pipeline learning from URLs and documents. 
+
+Deployed quantized Google Gemma model locally via llama-cpp-python for private processing. 
+
+Classify Human Electrocardiogram (ECG) Signals | 10/2022 – 01/2023 
+
+Engineered deep CNN models (GoogLeNet) using CWT and STFT, reaching 97% accuracy. 
+
+Analyzed Scalograms vs. Spectrograms, identifying Scalograms as superior for feature extraction. 
+
+Automatic Product Inspection with Computer Vision | 03/2022 – 08/2022 
+
+Deployed vision algorithm on edge devices for real-time surface flaw detection and visualization. 
+
+Designed industrial prototype housing in CATIA V5 for camera and projector components. 
+
+TECHNICAL SKILLS
+
+Programming & Databases: Python (Advanced), SQL, R, C/C++ (Basic), MATLAB/Simulink 
+
+ML Frameworks: PyTorch, TensorFlow, Scikit-learn, OpenCV, Pandas, NumPy, Matplotlib, LangChain 
+
+ML Concepts: CNNs, Vision Transformers (ViT), RAG, Object Detection, Anomaly Detection, OCR, Federated Learning, Statistical Analysis 
+
+MLOps & Deployment: Docker, Portainer, Git (Gitflow), FastAPI, Azure ML Studio, MLflow, LiveKit, ROS, NVIDIA Jetson 
+
+Tools & OS: Linux, CATIA V5, PyQt 
+
+PUBLICATIONS
+Krishna, A. R., Josekutty, J., Vilasan, A. A., et al. (2026). A Guided Ethics Assessment for Early Prototypes in AI Education. HCAI-EP '26, Kildare, Ireland. 
+
+Vilasan, A. A., Jäger, S., & Klarmann, N. (2025). AI-Driven Multi-Stage Computer Vision System for Defect Detection in Laser-Engraved Industrial Nameplates. arXiv preprint arXiv:2503.03395. 
+
+LANGUAGES
+
+English: C1 / Fluent 
+
+German: A2/B1 (In Progress) / Intermediate 
+
+Malayalam: Native
