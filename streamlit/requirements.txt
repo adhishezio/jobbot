@@ -4,3 +4,7 @@ requests
 pandas
 google-generativeai
 Pillow
+google-auth
+google-auth-oauthlib
+google-api-python-client
+plotly

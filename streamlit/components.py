@@ -11,10 +11,12 @@ def _confirm_address(exec_id, resume_url_path, street, plz):
         execute("""
             UPDATE address_confirmations
             SET status = 'confirmed',
+                final_street = %s,
+                final_plz_city = %s,
                 found_street = %s,
                 found_plz_city = %s
             WHERE execution_id = %s
-        """, (street, plz, exec_id))
+        """, (street, plz, street, plz, exec_id))
 
         # ✅ SIMPLEST FIX: n8n Wait node URL is ALWAYS /webhook-waiting/{execution_id}
         # No need to store, parse, or reconstruct anything
@@ -113,6 +115,4 @@ def show_cover_letter_badge():
     count = recent[0]['count'] if recent else 0
     if count > 0:
         st.sidebar.success(f"📄 {count} cover letter{'s' if count > 1 else ''} generated today")
-        if st.sidebar.button("View Cover Letters →"):
-            st.switch_page("pages/cover_letters.py")
 

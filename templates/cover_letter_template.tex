@@ -2,11 +2,8 @@
 \usepackage[utf8]{inputenc}
 \usepackage[empty]{fullpage}
 \usepackage[hidelinks]{hyperref}
-\usepackage{graphicx}
 \usepackage{fontawesome5}
-\usepackage{eso-pic}
 \usepackage{charter}
-\usepackage{enumitem}
 \usepackage{xcolor}
 
 \definecolor{UI_blue}{RGB}{32, 64, 151}
@@ -17,29 +14,23 @@
 
 \begin{document}
 
-\AddToShipoutPictureBG{%
-  \color{gr}
-  \AtPageUpperLeft{\rule[-1.0in]{\paperwidth}{1.1in}}
-}
-
-% Header
 \begin{center}
-    {\fontsize{24}{0}\selectfont\scshape \textcolor{UI_blue}{Adhish Anitha Vilasan}}\\
+    {\fontsize{24}{0}\selectfont\scshape \textcolor{UI_blue}{Your Name}}\\
     \vspace{0.1in}
     \small
-    \textcolor{UI_blue}{\href{mailto:avadhishj@gmail.com}{\faEnvelope\enspace avadhishj@gmail.com} \quad
-    \href{tel:+4915219432100}{\faPhone\enspace +49 15219432100} \quad
-    \faMapMarker\enspace Passau, Germany}
+    \textcolor{UI_blue}{\href{mailto:your.email@example.com}{\faEnvelope\enspace your.email@example.com} \quad
+    \href{tel:+490000000000}{\faPhone\enspace +49 000 0000000} \quad
+    \faMapMarker\enspace Your City, Country}
 \end{center}
 
-% Add vertical spacing to avoid overlap
 \vspace{0.3in}
 
 <<DATE>>\\
 
 \vspace{-0.1in}
+<<TO_DEPARTMENT>>\\
 <<TO_COMPANY>>\\
-<<TO_DEPARTMENT>><<TO_STREET>>\\
+<<TO_STREET>>\\
 <<TO_PLZ_CITY>>\\
 
 \vspace{-0.1in}
@@ -61,9 +52,8 @@
 
 \begin{flushright}
 <<CLOSING>>,\\
-\vspace{0.1in}
-\includegraphics[width=0.9in]{/assets/signature.png}\\
-Adhish Anitha Vilasan
+\vspace{0.2in}
+Your Name
 \end{flushright}
 
 \end{document}

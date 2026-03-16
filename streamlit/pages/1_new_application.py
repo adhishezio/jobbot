@@ -1,101 +1,231 @@
-import streamlit as st
-import requests
-import time
+import json
 import os
-from db import fetch_one, execute
+
+import google.generativeai as genai
+import pandas as pd
+import streamlit as st
+
 from components import show_address_confirmation_card
+from duplicate_detection import find_possible_duplicates
+from job_review import FIELD_DEFAULTS, build_generation_payload, persist_job, render_job_review_editor, seed_review_state
+from post_generation import poll_cover_letter_completion, render_generated_cover_letter, start_cover_letter_generation
+from screenshot_tab import render_screenshot_upload_tab
+from uploaded_application import render_uploaded_application_panel
+from ui import apply_ui_theme
+
 
 st.set_page_config(page_title="New Application", page_icon="📝", layout="wide")
-st.title("📝 Generate Cover Letter")
+apply_ui_theme()
+st.title("📝 New Application")
+st.session_state["current_page"] = "new_application"
+
+if st.session_state.get("new_application_notice"):
+    st.info(st.session_state.pop("new_application_notice"))
 
 with st.sidebar:
     show_address_confirmation_card()
 
-col1, col2 = st.columns(2)
-with col1:
-    company = st.text_input("Company Name")
-    position = st.text_input("Position Title")
-with col2:
-    language = st.radio("Language", ["de", "en"], horizontal=True, format_func=lambda x: "🇩🇪 German" if x == "de" else "🇬🇧 English")
-    department = st.text_input("Department / Hiring Manager (Optional)")
 
-jd_raw = st.text_area("Job Description (Paste Raw Text)", height=300)
+def _reset_review_state(prefix):
+    for field, default_value in FIELD_DEFAULTS.items():
+        st.session_state[f"{prefix}_{field}"] = default_value
+    st.session_state.pop(f"{prefix}_saved_job_id", None)
+    st.session_state.pop(f"{prefix}_duplicate_matches", None)
+    st.session_state.pop(f"{prefix}_duplicate_request", None)
+    st.session_state.pop(f"{prefix}_duplicate_override", None)
 
-# Check for required fields BEFORE the button click to avoid issues
-form_valid = company and position and jd_raw
 
-if st.button("🚀 Generate Cover Letter", type="primary"):
-    if not form_valid:
-        st.error("Company, Position, and JD are required!")
-        st.stop()
-        
-    payload = {
-        "company_name": company,
-        "position": position,
-        "department": department,
-        "language": language,
-        "jd_raw": jd_raw
-    }
-    
-    # Non-blocking Status container
-    with st.status("Initializing n8n Pipeline...") as status:
-        try:
-            st.write("Sending data to Generator...")
-            
-            # 1. ADD TIMEOUT and use http://n8n:5678 instead of LAN_IP inside Docker network
-            n8n_base = os.environ.get("N8N_WEBHOOK_BASE_URL", "http://n8n:5678/webhook")
-            webhook_url = f"{n8n_base}/generate-cover-letter"
-            
-            # Make the request with a timeout so it doesn't hang Streamlit
-            response = requests.post(webhook_url, json=payload, timeout=20)
-            
-            if response.status_code == 200:
-                status.update(label="✅ n8n Pipeline Started!", state="complete")
-                st.info("Look at the **Sidebar** right now! The Address Confirmation card is waiting for you there.")
-                st.info("You don't need Telegram—you can confirm it directly on the UI.")
-                st.info("The final cover letter results will appear here shortly.")
-                
-                # 2. Store app data in session state so we can poll in the background
-                st.session_state['pending_app_company'] = company
-                st.session_state['app_start_time'] = time.time()
-                
-                # 3. CRUCIAL: Allow a split-second for n8n to write to DB, then RERUN.
-                # A rerun allows the app.py sidebar logic to load the confirmation card!
-                time.sleep(1)
-                st.rerun()
-                
-            else:
-                status.update(label=f"Failed to start pipeline: Status {response.status_code}", state="error")
-                
-        except Exception as e:
-            status.update(label=f"Error connecting to n8n: {e}", state="error")
+def _find_duplicates(review, exclude_job_id=None):
+    return find_possible_duplicates(review, exclude_job_id=exclude_job_id)
+
+
+def _handle_generation_request(prefix, review, analysis, status_label):
+    matches = _find_duplicates(
+        review,
+        exclude_job_id=st.session_state.get(f"{prefix}_saved_job_id"),
+    )
+    if matches and not st.session_state.get(f"{prefix}_duplicate_override"):
+        st.session_state[f"{prefix}_duplicate_matches"] = matches
+        st.session_state[f"{prefix}_duplicate_request"] = {
+            "review": review,
+            "analysis": analysis,
+            "status_label": status_label,
+        }
+        return
+
+    st.session_state.pop(f"{prefix}_duplicate_matches", None)
+    st.session_state.pop(f"{prefix}_duplicate_request", None)
+    st.session_state.pop(f"{prefix}_duplicate_override", None)
+
+    job_id = persist_job(prefix, review, analysis)
+    payload = build_generation_payload(review, analysis, job_id=job_id)
+    start_cover_letter_generation(
+        prefix,
+        review,
+        analysis,
+        payload,
+        job_id,
+        status_label,
+    )
+
+
+def _render_duplicate_warning(prefix, clear_extracted=False):
+    matches = st.session_state.get(f"{prefix}_duplicate_matches")
+    pending = st.session_state.get(f"{prefix}_duplicate_request")
+    if not matches or not pending:
+        return
+
+    st.warning("⚠️ Possible Duplicate Detected")
+    st.dataframe(
+        pd.DataFrame(matches)[["company", "position", "created_at", "source"]],
+        hide_index=True,
+        use_container_width=True,
+    )
+    proceed_col, cancel_col = st.columns(2)
+    if proceed_col.button("✅ Proceed Anyway", key=f"{prefix}_proceed_duplicate", use_container_width=True):
+        st.session_state[f"{prefix}_duplicate_override"] = True
+        _handle_generation_request(
+            prefix,
+            pending["review"],
+            pending["analysis"],
+            pending["status_label"],
+        )
+    if cancel_col.button("❌ Cancel", key=f"{prefix}_cancel_duplicate", use_container_width=True):
+        _reset_review_state(prefix)
+        if clear_extracted:
+            st.session_state.pop("extracted_paste_data", None)
+            st.session_state["paste_raw_text"] = ""
+        st.rerun()
+
+
+def _extract_from_paste(raw_text):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        st.error("GEMINI_API_KEY is missing from your environment variables.")
+        return None
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    prompt = f"""
+    You are a data extraction assistant. Extract job posting information from the
+    raw text below. The text may contain navigation menus, cookie notices, ads,
+    footer links, and other noise — ignore all of that. Focus only on the actual
+    job posting content.
+
+    Return ONLY a valid JSON object with exactly these keys:
+    - "company_name": string — the hiring company name
+    - "position": string — the exact job title
+    - "department": string — department or hiring manager name if mentioned, else ""
+    - "language": string — "de" if job is in German, "en" if in English
+    - "date_posted": string — posting date in YYYY-MM-DD format if found, else ""
+    - "location": string — city and country if found, else ""
+    - "platform": string — if URL or source platform is mentioned (linkedin/stepstone/indeed), else "other"
+    - "jd_raw": string — the complete job description text, cleaned of navigation/footer noise
+
+    Raw text:
+    {raw_text}
+    """
+
+    response = model.generate_content(prompt)
+    cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
+    return json.loads(cleaned_text)
+
+
+def _show_confidence(extracted):
+    fields = [
+        extracted.get("company_name"),
+        extracted.get("position"),
+        extracted.get("jd_raw"),
+        extracted.get("location"),
+    ]
+    score = sum(1 for field in fields if field)
+    if score == 4:
+        st.success("✅ High confidence extraction")
+    elif score == 3:
+        st.info("🟡 Medium confidence — review fields")
+    else:
+        st.warning("⚠️ Low confidence — manual review recommended")
+
+
+seed_review_state("manual")
+seed_review_state("paste")
+if "paste_raw_text" not in st.session_state:
+    st.session_state["paste_raw_text"] = ""
+
+tab1, tab2, tab3 = st.tabs(["📋 Paste & Extract", "📸 Screenshot Upload", "✍️ Manual Entry"])
+
+with tab1:
+    raw_text = st.text_area(
+        "Paste the full job ad text here (copied from browser, PDF, or email)",
+        key="paste_raw_text",
+        height=400,
+        placeholder="Select all text from the job posting page and paste here...",
+    )
+
+    extract_col, clear_col = st.columns([1, 1])
+    if extract_col.button("🤖 Extract with AI", type="primary", use_container_width=True):
+        if not raw_text.strip():
+            st.error("Paste the job text first.")
+        else:
+            with st.status("Gemini is extracting the job details..."):
+                try:
+                    extracted = _extract_from_paste(raw_text)
+                    st.session_state["extracted_paste_data"] = extracted
+                    seed_review_state("paste", extracted, overwrite=True)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not extract the pasted job text: {exc}")
+
+    if clear_col.button("🔄 Clear & Paste Again", use_container_width=True):
+        st.session_state.pop("extracted_paste_data", None)
+        st.session_state["paste_raw_text"] = ""
+        _reset_review_state("paste")
+        st.rerun()
+
+    extracted_paste_data = st.session_state.get("extracted_paste_data")
+    if extracted_paste_data:
+        _show_confidence(extracted_paste_data)
+        paste_review, paste_analysis, paste_save_clicked, paste_generate_clicked = render_job_review_editor(
+            "paste",
+            "Extracted Job Detail — Review & Edit",
+            generate_label="🚀 Send to Pipeline",
+        )
+
+        if paste_save_clicked:
+            job_id = persist_job("paste", paste_review, paste_analysis)
+            if job_id:
+                st.success(f"Job saved with id {job_id}.")
+
+        if paste_generate_clicked:
+            _handle_generation_request("paste", paste_review, paste_analysis, "Initializing n8n pipeline...")
+
+        render_uploaded_application_panel("paste", paste_review, paste_analysis)
+        _render_duplicate_warning("paste", clear_extracted=True)
+
+with tab2:
+    render_screenshot_upload_tab()
+
+with tab3:
+    review, analysis, save_clicked, generate_clicked = render_job_review_editor(
+        "manual",
+        "Job Detail — Review & Edit",
+    )
+
+    if save_clicked:
+        job_id = persist_job("manual", review, analysis)
+        if job_id:
+            st.success(f"Job saved with id {job_id}.")
+
+    if generate_clicked:
+        _handle_generation_request("manual", review, analysis, "Initializing n8n pipeline...")
+
+    render_uploaded_application_panel("manual", review, analysis)
+    _render_duplicate_warning("manual")
 
 st.divider()
-
-# 4. Background Polling (Moved OUTSIDE the button click)
-if 'pending_app_company' in st.session_state:
-    company = st.session_state['pending_app_company']
-    
-    # Display a non-blocking spinner in the main body
-    with st.spinner(f"Pipeline running for {company}. Waiting for final feedback loop..."):
-        # Check notifications table for 'cl_ready'
-        # strictly look for the final cover letter, ignore address requests
-        notif = fetch_one("SELECT * FROM notifications WHERE type = 'cl_ready' AND title LIKE %s AND is_read = FALSE ORDER BY created_at DESC LIMIT 1", (f"%{company}%",))
-        
-        if notif:
-            st.success(f"✅ Final Cover Letter Ready for {company}!")
-            st.markdown(notif['message'])
-            # Mark as read
-            execute("UPDATE notifications SET is_read = TRUE WHERE id = %s", (notif['id'],))
-            st.balloons()
-            # Clean up session state
-            del st.session_state['pending_app_company']
-        else:
-            # Simple timeout logic
-            if time.time() - st.session_state['app_start_time'] > 120: # 2 minute timeout
-                st.warning(f"⏱️ Generation is taking a while for {company}. It may still be running in the background.")
-                del st.session_state['pending_app_company']
-            else:
-                # Tell Streamlit to automatically refresh in 5 seconds to check the DB again
-                time.sleep(5)
-                st.rerun()
+poll_cover_letter_completion("manual")
+render_generated_cover_letter("manual")
+poll_cover_letter_completion("upload")
+render_generated_cover_letter("upload")
+poll_cover_letter_completion("paste")
+render_generated_cover_letter("paste")

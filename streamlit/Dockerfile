@@ -8,6 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install any needed packages
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of your streamlit directory contents into the container
