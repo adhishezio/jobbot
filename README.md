@@ -23,7 +23,7 @@ It gives you one place to:
 
 ## Pipeline Overview
 
-![JobBot n8n Pipeline](docs/n8n-pipeline.svg)
+![JobBot n8n Pipeline](https://raw.githubusercontent.com/adhishezio/jobbot/main/docs/n8n-pipeline.svg)
 
 ## Quick Start
 
