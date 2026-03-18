@@ -80,6 +80,12 @@ def ensure_runtime_schema():
                 ADD COLUMN IF NOT EXISTS cover_letter_id INTEGER REFERENCES cover_letters(id)
                 """
             )
+            cur.execute(
+                """
+                ALTER TABLE applications
+                ADD COLUMN IF NOT EXISTS extra_file_paths TEXT[]
+                """
+            )
             cur.execute("ALTER TABLE jobs ALTER COLUMN status SET DEFAULT 'pending'")
             cur.execute("ALTER TABLE applications ALTER COLUMN status SET DEFAULT 'pending'")
             cur.execute(

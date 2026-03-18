@@ -1,6 +1,10 @@
 from db import fetch_all
 
 
+def _compact(value):
+    return "".join(ch.lower() for ch in (value or "") if ch.isalnum())
+
+
 def find_possible_duplicates(review, exclude_job_id=None):
     company_name = (review.get("company_name") or "").strip()
     position = (review.get("position") or "").strip()
@@ -10,35 +14,53 @@ def find_possible_duplicates(review, exclude_job_id=None):
 
     company_like = f"%{company_name}%"
     position_like = f"%{position}%"
+    company_compact = _compact(company_name)
+    company_compact_like = f"%{company_compact}%"
 
-    job_matches = fetch_all(
+    pending_job_matches = fetch_all(
         """
         SELECT
-            id,
-            company,
-            title AS position,
-            created_at,
-            'jobs' AS source
-        FROM jobs
+            j.id,
+            j.company,
+            j.title AS position,
+            j.created_at,
+            'Saved Jobs' AS source
+        FROM jobs j
+        LEFT JOIN LATERAL (
+            SELECT status
+            FROM applications a
+            WHERE a.source_job_id = j.id
+            ORDER BY a.created_at DESC
+            LIMIT 1
+        ) latest_app ON TRUE
         WHERE (
-                LOWER(company) = LOWER(%s)
-                OR company ILIKE %s
-                OR similarity(LOWER(company), LOWER(%s)) >= 0.72
+                LOWER(COALESCE(j.status, 'pending')) IN ('', 'new', 'drafted', 'pending', 'application_saved')
+                OR LOWER(COALESCE(latest_app.status, 'pending')) IN ('', 'new', 'drafted', 'pending', 'application_saved')
+              )
+          AND (
+                regexp_replace(LOWER(COALESCE(j.company, '')), '[^a-z0-9]+', '', 'g') = %s
+                OR regexp_replace(LOWER(COALESCE(j.company, '')), '[^a-z0-9]+', '', 'g') LIKE %s
+                OR j.company ILIKE %s
+                OR similarity(
+                    regexp_replace(LOWER(COALESCE(j.company, '')), '[^a-z0-9]+', '', 'g'),
+                    %s
+                ) >= 0.84
               )
           AND (
                 %s = ''
-                OR LOWER(COALESCE(title, '')) = LOWER(%s)
-                OR title ILIKE %s
-                OR similarity(LOWER(COALESCE(title, '')), LOWER(%s)) >= 0.58
+                OR LOWER(COALESCE(j.title, '')) = LOWER(%s)
+                OR j.title ILIKE %s
+                OR similarity(LOWER(COALESCE(j.title, '')), LOWER(%s)) >= 0.60
               )
-          AND (%s IS NULL OR id <> %s)
-        ORDER BY created_at DESC
+          AND (%s IS NULL OR j.id <> %s)
+        ORDER BY j.created_at DESC
         LIMIT 10
         """,
         (
-            company_name,
+            company_compact,
+            company_compact_like,
             company_like,
-            company_name,
+            company_compact,
             position,
             position,
             position_like,
@@ -47,37 +69,51 @@ def find_possible_duplicates(review, exclude_job_id=None):
             exclude_job_id,
         ),
     )
-    letter_matches = fetch_all(
+
+    applied_matches = fetch_all(
         """
         SELECT
-            id,
-            company,
-            position,
-            created_at,
-            'cover_letters' AS source
-        FROM cover_letters
-        WHERE (
-                LOWER(company) = LOWER(%s)
-                OR company ILIKE %s
-                OR similarity(LOWER(company), LOWER(%s)) >= 0.72
+            a.id,
+            a.company,
+            a.position,
+            a.created_at,
+            'Applied Jobs' AS source
+        FROM applications a
+        WHERE LOWER(COALESCE(a.status, 'pending')) NOT IN ('', 'new', 'drafted', 'pending', 'application_saved')
+          AND (
+                regexp_replace(LOWER(COALESCE(a.company, '')), '[^a-z0-9]+', '', 'g') = %s
+                OR regexp_replace(LOWER(COALESCE(a.company, '')), '[^a-z0-9]+', '', 'g') LIKE %s
+                OR a.company ILIKE %s
+                OR similarity(
+                    regexp_replace(LOWER(COALESCE(a.company, '')), '[^a-z0-9]+', '', 'g'),
+                    %s
+                ) >= 0.84
               )
           AND (
                 %s = ''
-                OR LOWER(COALESCE(position, '')) = LOWER(%s)
-                OR position ILIKE %s
-                OR similarity(LOWER(COALESCE(position, '')), LOWER(%s)) >= 0.58
+                OR LOWER(COALESCE(a.position, '')) = LOWER(%s)
+                OR a.position ILIKE %s
+                OR similarity(LOWER(COALESCE(a.position, '')), LOWER(%s)) >= 0.60
               )
-        ORDER BY created_at DESC
+          AND (%s IS NULL OR COALESCE(a.source_job_id, -1) <> %s)
+        ORDER BY a.created_at DESC
         LIMIT 10
         """,
         (
-            company_name,
+            company_compact,
+            company_compact_like,
             company_like,
-            company_name,
+            company_compact,
             position,
             position,
             position_like,
             position,
+            exclude_job_id,
+            exclude_job_id,
         ),
     )
-    return job_matches + letter_matches
+
+    deduped = {}
+    for row in pending_job_matches + applied_matches:
+        deduped[(row["source"], row["id"])] = row
+    return list(deduped.values())

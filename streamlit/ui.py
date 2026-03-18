@@ -38,6 +38,16 @@ def apply_ui_theme():
             color: white;
             font-weight: 600;
             box-shadow: 0 10px 24px rgba(58, 141, 222, 0.18);
+            transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 28px rgba(58, 141, 222, 0.24);
+            filter: saturate(1.05);
+        }
+        .stButton > button:active, .stDownloadButton > button:active {
+            transform: translateY(0);
+            box-shadow: 0 8px 18px rgba(58, 141, 222, 0.18);
         }
         .stButton > button[kind="secondary"] {
             background: white;

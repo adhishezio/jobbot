@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+from datetime import datetime
 
 
 BASE_STORAGE_DIR = "/files/job_records"
@@ -13,8 +14,43 @@ def safe_slug(value):
 
 
 def build_job_folder(job_id, company_name, position):
-    folder_name = f"job_{job_id}_{safe_slug(company_name)}_{safe_slug(position)}"
+    # Keep the folder name stable per job id so later edits do not create orphan folders.
+    folder_name = f"job_{safe_slug(str(job_id))}"
     return os.path.join(BASE_STORAGE_DIR, folder_name)
+
+
+def save_uploaded_file(uploaded_file, subfolder, company_name, position, suffix=None):
+    if not uploaded_file:
+        return None
+
+    target_dir = os.path.join("/files", subfolder)
+    os.makedirs(target_dir, exist_ok=True)
+
+    extension = os.path.splitext(uploaded_file.name or "")[1].lower() or ".bin"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    label = safe_slug(suffix or os.path.splitext(uploaded_file.name or "document")[0])
+    filename = f"{timestamp}_{safe_slug(company_name)}_{safe_slug(position)}_{label}{extension}"
+    target_path = os.path.join(target_dir, filename)
+
+    with open(target_path, "wb") as handle:
+        handle.write(uploaded_file.getbuffer())
+
+    return target_path
+
+
+def save_uploaded_files(uploaded_files, subfolder, company_name, position, label_prefix="attachment"):
+    saved_paths = []
+    for index, uploaded_file in enumerate(uploaded_files or [], start=1):
+        saved_path = save_uploaded_file(
+            uploaded_file,
+            subfolder,
+            company_name,
+            position,
+            suffix=f"{label_prefix}_{index}",
+        )
+        if saved_path:
+            saved_paths.append(saved_path)
+    return saved_paths
 
 
 def sync_job_bundle(job_id, review, analysis, screenshot_payloads=None, existing_screenshot_paths=None):
@@ -54,6 +90,7 @@ def sync_application_bundle(
     cover_letter_pdf_path=None,
     resume_pdf_path=None,
     latex_source=None,
+    attachment_paths=None,
 ):
     application_dir = os.path.join(folder_path, f"application_{application_id}")
     os.makedirs(application_dir, exist_ok=True)
@@ -77,4 +114,16 @@ def sync_application_bundle(
         if os.path.abspath(resume_pdf_path) != os.path.abspath(copied_resume):
             shutil.copy2(resume_pdf_path, copied_resume)
 
-    return application_dir, copied_cover_letter, copied_resume
+    copied_attachments = []
+    if attachment_paths:
+        attachment_dir = os.path.join(application_dir, "attachments")
+        os.makedirs(attachment_dir, exist_ok=True)
+        for source_path in attachment_paths:
+            if not source_path or not os.path.exists(source_path):
+                continue
+            target_path = os.path.join(attachment_dir, os.path.basename(source_path))
+            if os.path.abspath(source_path) != os.path.abspath(target_path):
+                shutil.copy2(source_path, target_path)
+            copied_attachments.append(target_path)
+
+    return application_dir, copied_cover_letter, copied_resume, copied_attachments

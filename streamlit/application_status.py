@@ -29,3 +29,8 @@ def is_pending_status(value):
 
 def job_status_for_application(value):
     return normalize_application_status(value)
+
+
+def format_application_status(value):
+    normalized = normalize_application_status(value)
+    return normalized.replace("_", " ").title()

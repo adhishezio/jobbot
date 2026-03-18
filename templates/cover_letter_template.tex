@@ -2,8 +2,11 @@
 \usepackage[utf8]{inputenc}
 \usepackage[empty]{fullpage}
 \usepackage[hidelinks]{hyperref}
+\usepackage{graphicx}
 \usepackage{fontawesome5}
+\usepackage{eso-pic}
 \usepackage{charter}
+\usepackage{enumitem}
 \usepackage{xcolor}
 
 \definecolor{UI_blue}{RGB}{32, 64, 151}
@@ -14,8 +17,14 @@
 
 \begin{document}
 
+\AddToShipoutPictureBG{%
+  \color{gr}
+  \AtPageUpperLeft{\rule[-1.0in]{\paperwidth}{1.1in}}
+}
+
+% Header
 \begin{center}
-    {\fontsize{24}{0}\selectfont\scshape \textcolor{UI_blue}{Your Name}}\\
+    {\fontsize{24}{0}\selectfont\scshape \textcolor{UI_blue}{YOUR NAME}}\\
     \vspace{0.1in}
     \small
     \textcolor{UI_blue}{\href{mailto:your.email@example.com}{\faEnvelope\enspace your.email@example.com} \quad
@@ -52,8 +61,8 @@
 
 \begin{flushright}
 <<CLOSING>>,\\
-\vspace{0.2in}
-Your Name
+\vspace{0.15in}
+YOUR NAME
 \end{flushright}
 
 \end{document}

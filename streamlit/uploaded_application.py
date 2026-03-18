@@ -1,35 +1,38 @@
-import os
-from datetime import datetime
-
 import streamlit as st
 
-from application_status import job_status_for_application, normalize_application_status
+from application_status import format_application_status, job_status_for_application, normalize_application_status
 from db import execute, execute_returning, fetch_one
 from job_review import persist_job
-from local_store import build_job_folder, sync_application_bundle
+from local_store import build_job_folder, save_uploaded_file, save_uploaded_files, sync_application_bundle
 
 
 UPLOAD_STATUS_OPTIONS = ["pending", "applied"]
 
 
-def _safe_slug(value):
-    cleaned = "".join(char if char.isalnum() else "_" for char in (value or "").strip())
-    return cleaned.strip("_") or "document"
-
-
-def _save_uploaded_pdf(uploaded_file, subfolder, company_name, position, suffix):
-    if not uploaded_file:
+def _application_by_id(application_id):
+    if not application_id:
         return None
+    return fetch_one("SELECT * FROM applications WHERE id = %s", (application_id,))
 
-    target_dir = os.path.join("/files", subfolder)
-    os.makedirs(target_dir, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_{_safe_slug(company_name)}_{_safe_slug(position)}_{suffix}.pdf"
-    target_path = os.path.join(target_dir, filename)
-    with open(target_path, "wb") as handle:
-        handle.write(uploaded_file.getbuffer())
-    return target_path
+def _editable_application(job_id, prefix):
+    bound_application = _application_by_id(st.session_state.get(f"{prefix}_saved_application_id"))
+    if bound_application and bound_application.get("source_job_id") == job_id:
+        return bound_application
+
+    linked_application = fetch_one(
+        """
+        SELECT a.*
+        FROM jobs j
+        JOIN applications a ON a.id = j.application_id
+        WHERE j.id = %s
+        """,
+        (job_id,),
+    )
+    if linked_application and normalize_application_status(linked_application.get("status")) == "pending":
+        return linked_application
+
+    return None
 
 
 def _latest_application(job_id):
@@ -45,7 +48,16 @@ def _latest_application(job_id):
     )
 
 
-def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_cover_letter, uploaded_resume=None):
+def save_uploaded_application(
+    prefix,
+    review,
+    analysis,
+    status,
+    notes,
+    uploaded_cover_letter,
+    uploaded_resume=None,
+    uploaded_attachments=None,
+):
     if uploaded_cover_letter is None:
         st.error("Upload the cover letter PDF first.")
         return None
@@ -54,9 +66,9 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
     if not job_id:
         return None
 
-    existing = _latest_application(job_id)
+    existing = _editable_application(job_id, prefix)
     normalized_status = normalize_application_status(status)
-    cover_letter_path = _save_uploaded_pdf(
+    cover_letter_path = save_uploaded_file(
         uploaded_cover_letter,
         "uploaded_cover_letters",
         review["company_name"],
@@ -64,14 +76,23 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
         "cover_letter",
     )
     resume_path = existing.get("resume_pdf_path") if existing else None
+    attachment_paths = list(existing.get("extra_file_paths") or []) if existing else []
     if uploaded_resume is not None:
-        resume_path = _save_uploaded_pdf(
+        resume_path = save_uploaded_file(
             uploaded_resume,
             "resumes",
             review["company_name"],
             review["position"],
             "resume",
         )
+    attachment_paths.extend(
+        save_uploaded_files(
+            uploaded_attachments,
+            "application_attachments",
+            review["company_name"],
+            review["position"],
+        )
+    )
 
     params = (
         review["company_name"],
@@ -85,6 +106,7 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
         notes.strip() or None,
         review.get("platform") or None,
         resume_path,
+        attachment_paths or None,
         job_id,
     )
 
@@ -103,6 +125,7 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
                 notes = %s,
                 platform = %s,
                 resume_pdf_path = %s,
+                extra_file_paths = %s,
                 source_job_id = %s,
                 cover_letter_id = NULL
             WHERE id = %s
@@ -127,8 +150,9 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
                 notes,
                 platform,
                 resume_pdf_path,
+                extra_file_paths,
                 source_job_id
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             params,
@@ -144,7 +168,7 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
     if not root_folder:
         root_folder = build_job_folder(job_id, review["company_name"], review["position"])
 
-    application_folder, copied_cover_letter, copied_resume = sync_application_bundle(
+    application_folder, copied_cover_letter, copied_resume, copied_attachments = sync_application_bundle(
         root_folder,
         application_id,
         {
@@ -157,6 +181,7 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
         },
         cover_letter_pdf_path=cover_letter_path,
         resume_pdf_path=resume_path,
+        attachment_paths=attachment_paths,
     )
     execute(
         """
@@ -164,12 +189,14 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
         SET local_folder_path = %s,
             cl_pdf_path = %s,
             resume_pdf_path = %s
+            , extra_file_paths = %s
         WHERE id = %s
         """,
         (
             application_folder or local_folder,
             copied_cover_letter or cover_letter_path,
             copied_resume or resume_path,
+            copied_attachments or attachment_paths or None,
             application_id,
         ),
     )
@@ -183,6 +210,7 @@ def save_uploaded_application(prefix, review, analysis, status, notes, uploaded_
         (application_id, job_status_for_application(normalized_status), job_id),
     )
     st.session_state[f"{prefix}_saved_job_id"] = job_id
+    st.session_state[f"{prefix}_saved_application_id"] = application_id
     return application_id
 
 
@@ -192,6 +220,7 @@ def render_uploaded_application_panel(prefix, review, analysis):
             "Status for this saved application",
             UPLOAD_STATUS_OPTIONS,
             key=f"{prefix}_upload_status",
+            format_func=format_application_status,
         )
         notes = st.text_area(
             "Notes",
@@ -209,6 +238,13 @@ def render_uploaded_application_panel(prefix, review, analysis):
             type=["pdf"],
             key=f"{prefix}_uploaded_resume",
         )
+        attachments = st.file_uploader(
+            "Extra Files (optional)",
+            type=["pdf", "png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key=f"{prefix}_uploaded_attachments",
+            help="Upload certificates, transcripts, portfolios, or screenshots.",
+        )
 
         if st.button("Save Uploaded Application", key=f"{prefix}_save_uploaded_application", use_container_width=True):
             application_id = save_uploaded_application(
@@ -219,7 +255,8 @@ def render_uploaded_application_panel(prefix, review, analysis):
                 notes,
                 cover_letter,
                 resume,
+                attachments,
             )
             if application_id:
-                label = "Applied job" if normalize_application_status(status) == "applied" else "Pending application"
+                label = "Applied Job" if normalize_application_status(status) == "applied" else "Pending Application"
                 st.success(f"{label} saved with id {application_id}.")

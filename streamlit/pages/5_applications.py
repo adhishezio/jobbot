@@ -7,14 +7,22 @@ import streamlit as st
 
 from application_status import (
     APPLICATION_STATUS_OPTIONS,
+    format_application_status,
     is_pending_status,
     job_status_for_application,
     normalize_application_status,
 )
 from components import show_address_confirmation_card
 from db import execute, execute_returning, fetch_all, fetch_one
-from job_review import analyze_job_fit, build_embedding_text, seed_review_state
-from local_store import build_job_folder, safe_slug, sync_application_bundle, sync_job_bundle
+from job_review import analyze_job_fit, build_embedding_text, mark_job_for_edit, seed_review_state
+from local_store import (
+    build_job_folder,
+    save_uploaded_file,
+    save_uploaded_files,
+    sync_application_bundle,
+    sync_job_bundle,
+)
+from platforms import normalize_platform, platform_label, platform_select_options
 from semantic_search import embed_text, vector_literal
 from ui import apply_ui_theme
 
@@ -69,6 +77,10 @@ def _read_file_bytes(path):
         return None
     with open(path, "rb") as handle:
         return handle.read()
+
+
+def _normalize_file_paths(values):
+    return [path for path in (_normalize_file_path(value) for value in (values or [])) if path]
 
 
 def _preview_pdf(path, height=520):
@@ -232,7 +244,7 @@ def _search_applications(query):
         SELECT
             a.*,
             j.location,
-            j.platform,
+            COALESCE(a.platform, j.platform) AS platform,
             j.job_url,
             j.posted_date,
             j.language_pref AS job_language,
@@ -306,6 +318,30 @@ def _latest_application_for_job(job_id):
     )
 
 
+def _linked_application_for_job(job_id):
+    return fetch_one(
+        """
+        SELECT a.*
+        FROM jobs j
+        JOIN applications a ON a.id = j.application_id
+        WHERE j.id = %s
+        """,
+        (job_id,),
+    )
+
+
+def _pending_application_for_job(job_id):
+    linked = _linked_application_for_job(job_id)
+    if linked and is_pending_status(linked.get("status")):
+        return linked
+
+    latest = _latest_application_for_job(job_id)
+    if latest and is_pending_status(latest.get("status")):
+        return latest
+
+    return None
+
+
 def _load_job(job_id):
     return fetch_one(
         f"""
@@ -331,7 +367,7 @@ def _load_application(application_id):
         SELECT
             a.*,
             j.location,
-            j.platform,
+            COALESCE(a.platform, j.platform) AS platform,
             j.job_url,
             j.posted_date,
             j.language_pref AS job_language,
@@ -346,23 +382,6 @@ def _load_application(application_id):
     )
 
 
-def _save_uploaded_pdf(uploaded_file, subfolder, company, position, suffix):
-    if not uploaded_file:
-        return None
-
-    target_dir = os.path.join("/files", subfolder)
-    os.makedirs(target_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_{safe_slug(company)}_{safe_slug(position)}_{suffix}.pdf"
-    target_path = os.path.join(target_dir, filename)
-
-    with open(target_path, "wb") as handle:
-        handle.write(uploaded_file.getbuffer())
-
-    return target_path
-
-
 def _job_folder_path(job):
     folder_path = job.get("local_folder_path")
     if folder_path:
@@ -375,34 +394,88 @@ def _job_folder_path(job):
     return folder_path
 
 
-def _sync_application_files(job, application_id, metadata, cover_letter_pdf_path=None, resume_pdf_path=None, latex_source=None):
-    application_folder, copied_cover_letter, copied_resume = sync_application_bundle(
+def _sync_application_files(
+    job,
+    application_id,
+    metadata,
+    cover_letter_pdf_path=None,
+    resume_pdf_path=None,
+    latex_source=None,
+    attachment_paths=None,
+):
+    application_folder, copied_cover_letter, copied_resume, copied_attachments = sync_application_bundle(
         _job_folder_path(job),
         application_id,
         metadata,
         cover_letter_pdf_path=cover_letter_pdf_path,
         resume_pdf_path=resume_pdf_path,
         latex_source=latex_source,
+        attachment_paths=attachment_paths,
     )
     execute(
         """
         UPDATE applications
         SET local_folder_path = %s,
             cl_pdf_path = %s,
-            resume_pdf_path = %s
+            resume_pdf_path = %s,
+            extra_file_paths = %s
         WHERE id = %s
         """,
         (
             application_folder,
             copied_cover_letter or cover_letter_pdf_path,
             copied_resume or resume_pdf_path,
+            copied_attachments or attachment_paths or None,
             application_id,
         ),
     )
 
 
+def _render_extra_files(extra_file_paths, suffix):
+    normalized_paths = _normalize_file_paths(extra_file_paths)
+    if not normalized_paths:
+        return
+
+    st.markdown("#### Extra Files")
+    for index, path in enumerate(normalized_paths, start=1):
+        if not os.path.exists(path):
+            continue
+
+        label = os.path.basename(path)
+        ext = os.path.splitext(path)[1].lower()
+        mime = {
+            ".pdf": "application/pdf",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+        }.get(ext, "application/octet-stream")
+        row_col1, row_col2 = st.columns([1, 1])
+        row_col1.download_button(
+            f"Download {label}",
+            data=_read_file_bytes(path),
+            file_name=label,
+            mime=mime,
+            key=f"extra_download_{suffix}_{index}",
+            use_container_width=True,
+        )
+        if ext in {".png", ".jpg", ".jpeg"}:
+            with row_col2:
+                st.image(path, caption=label, use_container_width=True)
+        elif ext == ".pdf":
+            with row_col2:
+                if st.button(f"View {label}", key=f"extra_view_{suffix}_{index}", use_container_width=True):
+                    st.session_state[f"show_extra_pdf_{suffix}_{index}"] = not st.session_state.get(
+                        f"show_extra_pdf_{suffix}_{index}",
+                        False,
+                    )
+            if st.session_state.get(f"show_extra_pdf_{suffix}_{index}"):
+                _preview_pdf(path, height=420)
+        else:
+            row_col2.caption(label)
+
+
 def _ensure_job_application(job):
-    existing = _latest_application_for_job(job["id"])
+    existing = _pending_application_for_job(job["id"])
     if existing:
         return existing
 
@@ -451,6 +524,7 @@ def _remove_linked_file(path):
     removable_roots = (
         "/files/uploaded_cover_letters",
         "/files/resumes",
+        "/files/application_attachments",
         "/files/job_records",
     )
     if normalized.startswith(removable_roots) and os.path.exists(normalized):
@@ -467,14 +541,14 @@ def _open_regeneration(job):
         "location": job.get("location") or "",
         "salary": job.get("salary") or "",
         "posted_date": _date_input_value(job.get("posted_date")),
-        "platform": job.get("platform") or "",
+        "platform": normalize_platform(job.get("platform") or ""),
         "job_url": job.get("job_url") or "",
         "language": job.get("language_pref") or "de",
         "department": "",
         "jd_raw": job.get("jd_raw") or "",
     }
     seed_review_state("manual", review, overwrite=True)
-    st.session_state["manual_saved_job_id"] = job["id"]
+    mark_job_for_edit("manual", job["id"], review)
     st.session_state["new_application_notice"] = (
         f"Loaded {job.get('company') or 'this company'} / {job.get('title') or 'this role'} into Manual Entry."
     )
@@ -483,7 +557,7 @@ def _open_regeneration(job):
 
 
 def _pending_application_controls(job):
-    application = _latest_application_for_job(job["id"])
+    application = _pending_application_for_job(job["id"])
     current_status = normalize_application_status(application.get("status") if application else "pending")
     editable_statuses = ["pending", "applied"]
     status_index = (
@@ -498,6 +572,7 @@ def _pending_application_controls(job):
         editable_statuses,
         index=status_index,
         key=f"job_status_select_{job['id']}",
+        format_func=format_application_status,
     )
     notes = st.text_area(
         "Application Notes",
@@ -515,6 +590,12 @@ def _pending_application_controls(job):
         type=["pdf"],
         key=f"job_cover_upload_{job['id']}",
     )
+    extra_uploads = st.file_uploader(
+        "Extra Files (optional)",
+        type=["pdf", "png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"job_extra_upload_{job['id']}",
+    )
 
     action_col1, action_col2 = st.columns(2)
     if action_col1.button("Save Pending Details", key=f"save_pending_details_{job['id']}", type="primary"):
@@ -526,10 +607,11 @@ def _pending_application_controls(job):
 
         resume_path = _normalize_file_path(application.get("resume_pdf_path"))
         cover_letter_path = _normalize_file_path(application.get("cl_pdf_path"))
+        extra_file_paths = _normalize_file_paths(application.get("extra_file_paths"))
         cover_letter_id = application.get("cover_letter_id")
 
         if resume_upload is not None:
-            resume_path = _save_uploaded_pdf(
+            resume_path = save_uploaded_file(
                 resume_upload,
                 "resumes",
                 job.get("company"),
@@ -537,7 +619,7 @@ def _pending_application_controls(job):
                 "resume",
             )
         if cover_upload is not None:
-            cover_letter_path = _save_uploaded_pdf(
+            cover_letter_path = save_uploaded_file(
                 cover_upload,
                 "uploaded_cover_letters",
                 job.get("company"),
@@ -545,6 +627,14 @@ def _pending_application_controls(job):
                 "cover_letter",
             )
             cover_letter_id = None
+        extra_file_paths.extend(
+            save_uploaded_files(
+                extra_uploads,
+                "application_attachments",
+                job.get("company"),
+                job.get("title"),
+            )
+        )
 
         normalized_status = normalize_application_status(status)
         execute(
@@ -561,6 +651,7 @@ def _pending_application_controls(job):
                 platform = %s,
                 resume_pdf_path = %s,
                 cl_pdf_path = %s,
+                extra_file_paths = %s,
                 cover_letter_id = %s
             WHERE id = %s
             """,
@@ -576,6 +667,7 @@ def _pending_application_controls(job):
                 job.get("platform") or None,
                 resume_path,
                 cover_letter_path,
+                extra_file_paths or None,
                 cover_letter_id,
                 application["id"],
             ),
@@ -603,6 +695,7 @@ def _pending_application_controls(job):
             cover_letter_pdf_path=cover_letter_path,
             resume_pdf_path=resume_path,
             latex_source=application.get("cl_text"),
+            attachment_paths=extra_file_paths,
         )
         st.success("Pending application details updated.")
         st.rerun()
@@ -647,12 +740,19 @@ def _pending_application_controls(job):
 
 
 def _save_job_edit(job):
-    with st.expander("Edit job", expanded=True):
+    with st.expander("Edit Job", expanded=True):
         with st.form(f"edit_job_form_{job['id']}"):
             title = st.text_input("Job Title", value=job["title"] or "")
             company = st.text_input("Company", value=job["company"] or "")
             location = st.text_input("Location", value=job["location"] or "")
-            platform = st.text_input("Platform", value=job["platform"] or "")
+            platform_options = platform_select_options()
+            current_platform = normalize_platform(job.get("platform") or "")
+            platform = st.selectbox(
+                "Platform",
+                platform_options,
+                index=platform_options.index(current_platform) if current_platform in platform_options else 0,
+                format_func=platform_label,
+            )
             language = st.selectbox(
                 "Language",
                 ["de", "en"],
@@ -673,7 +773,7 @@ def _save_job_edit(job):
                 "location": location,
                 "salary": job.get("salary") or "",
                 "posted_date": posted_date,
-                "platform": platform,
+                "platform": normalize_platform(platform),
                 "job_url": job.get("job_url") or "",
                 "language": language,
                 "department": "",
@@ -708,7 +808,7 @@ def _save_job_edit(job):
                     title,
                     company,
                     location or None,
-                    platform or None,
+                    normalize_platform(platform) or None,
                     language,
                     _parse_date_input(posted_date),
                     jd_raw,
@@ -752,11 +852,13 @@ def _delete_job_panel(job):
 
         try:
             linked_applications = fetch_all(
-                "SELECT id, local_folder_path FROM applications WHERE source_job_id = %s",
+                "SELECT id, local_folder_path, extra_file_paths FROM applications WHERE source_job_id = %s",
                 (job["id"],),
             )
             execute("UPDATE jobs SET application_id = NULL WHERE id = %s", (job["id"],))
             for application in linked_applications:
+                for attachment_path in application.get("extra_file_paths") or []:
+                    _remove_linked_file(attachment_path)
                 execute("DELETE FROM notifications WHERE application_id = %s", (application["id"],))
                 execute("DELETE FROM applications WHERE id = %s", (application["id"],))
                 if application.get("local_folder_path") and os.path.isdir(application["local_folder_path"]):
@@ -773,10 +875,18 @@ def _delete_job_panel(job):
 
 
 def _save_application_edit(application):
-    with st.expander("Edit application", expanded=True):
+    with st.expander("Edit Application", expanded=True):
         with st.form(f"edit_application_form_{application['id']}"):
             company = st.text_input("Company", value=application["company"] or "")
             position = st.text_input("Position", value=application["position"] or "")
+            platform_options = platform_select_options()
+            current_platform = normalize_platform(application.get("platform") or "")
+            platform = st.selectbox(
+                "Platform",
+                platform_options,
+                index=platform_options.index(current_platform) if current_platform in platform_options else 0,
+                format_func=platform_label,
+            )
             language = st.selectbox(
                 "Language",
                 ["de", "en"],
@@ -789,31 +899,51 @@ def _save_application_edit(application):
                 index=APPLICATION_STATUS_OPTIONS.index(current_status)
                 if current_status in APPLICATION_STATUS_OPTIONS
                 else 0,
+                format_func=format_application_status,
             )
             notes = st.text_area("Notes", value=application.get("notes") or "", height=140)
             jd_raw = st.text_area("Job Description", value=application.get("jd_raw") or "", height=220)
+            extra_uploads = st.file_uploader(
+                "Extra Files (optional)",
+                type=["pdf", "png", "jpg", "jpeg"],
+                accept_multiple_files=True,
+                key=f"edit_application_extra_{application['id']}",
+            )
             submitted = st.form_submit_button("Update Application", type="primary")
 
         if submitted:
             normalized_status = normalize_application_status(status)
+            extra_file_paths = _normalize_file_paths(application.get("extra_file_paths"))
+            extra_file_paths.extend(
+                save_uploaded_files(
+                    extra_uploads,
+                    "application_attachments",
+                    company,
+                    position,
+                )
+            )
             execute(
                 """
                 UPDATE applications
                 SET company = %s,
                     position = %s,
+                    platform = %s,
                     language = %s,
                     status = %s,
                     notes = %s,
-                    jd_raw = %s
+                    jd_raw = %s,
+                    extra_file_paths = %s
                 WHERE id = %s
                 """,
                 (
                     company,
                     position,
+                    normalize_platform(platform) or None,
                     language,
                     normalized_status,
                     notes or None,
                     jd_raw,
+                    extra_file_paths or None,
                     application["id"],
                 ),
             )
@@ -822,12 +952,14 @@ def _save_application_edit(application):
                     """
                     UPDATE jobs
                     SET application_id = %s,
-                        status = %s
+                        status = %s,
+                        platform = %s
                     WHERE id = %s
                     """,
                     (
                         application["id"],
                         job_status_for_application(normalized_status),
+                        normalize_platform(platform) or None,
                         application["source_job_id"],
                     ),
                 )
@@ -848,6 +980,7 @@ def _save_application_edit(application):
                     cover_letter_pdf_path=_normalize_file_path(application.get("cl_pdf_path")),
                     resume_pdf_path=_normalize_file_path(application.get("resume_pdf_path")),
                     latex_source=application.get("cl_text"),
+                    attachment_paths=extra_file_paths,
                 )
             st.success("Application updated.")
             st.session_state.pop(f"edit_application_{application['id']}", None)
@@ -855,7 +988,7 @@ def _save_application_edit(application):
 
 
 def _delete_application_panel(application):
-    st.warning("Deleting this application removes the saved cover-letter/resume link for this job.")
+    st.warning("Deleting this application removes the saved cover letter and resume link for this job.")
     confirmed = st.checkbox(
         "I understand and want to delete this application",
         key=f"confirm_delete_application_{application['id']}",
@@ -876,6 +1009,8 @@ def _delete_application_panel(application):
                 (application["source_job_id"],),
             )
         execute("DELETE FROM notifications WHERE application_id = %s", (application["id"],))
+        for attachment_path in application.get("extra_file_paths") or []:
+            _remove_linked_file(attachment_path)
         execute("DELETE FROM applications WHERE id = %s", (application["id"],))
         if application.get("local_folder_path") and os.path.isdir(application["local_folder_path"]):
             shutil.rmtree(application["local_folder_path"], ignore_errors=True)
@@ -902,6 +1037,7 @@ if hasattr(st, "dialog"):
             application = _latest_application_for_job(record_id) if job else None
             cover_letter = _latest_cover_letter(job["company"], application["cover_letter_id"] if application else None) if job else None
             resume_path = _normalize_file_path(application.get("resume_pdf_path")) if application else None
+            extra_file_paths = application.get("extra_file_paths") if application else []
             folder_path = job.get("local_folder_path") if job else None
             screenshot_paths = job.get("screenshot_paths") if job else []
             title = job["title"] if job else "Unknown job"
@@ -919,6 +1055,7 @@ if hasattr(st, "dialog"):
                 application.get("cover_letter_id"),
             ) if application else None
             resume_path = _normalize_file_path(application.get("resume_pdf_path")) if application else None
+            extra_file_paths = application.get("extra_file_paths") if application else []
             folder_path = (
                 application.get("local_folder_path") or application.get("job_local_folder_path")
             ) if application else None
@@ -963,7 +1100,8 @@ if hasattr(st, "dialog"):
         meta_col3.metric("Date", _format_date(posted_date))
 
         st.markdown(f"### {title}")
-        st.caption(" | ".join(bit for bit in [location, platform, language] if bit))
+        display_platform = platform_label(platform) if platform else None
+        st.caption(" | ".join(bit for bit in [location, display_platform, language] if bit))
 
         detail_col1, detail_col2 = st.columns([2, 1])
         with detail_col1:
@@ -1047,6 +1185,8 @@ if hasattr(st, "dialog"):
             if st.session_state.get(f"show_resume_{suffix}"):
                 _preview_pdf(resume_path, height=420)
 
+        _render_extra_files(extra_file_paths, suffix)
+
         if st.button("✖ Close", key=f"close_detail_{suffix}", use_container_width=True):
             _close_detail()
             st.rerun()
@@ -1063,7 +1203,7 @@ def _render_job_card(job):
         with top_left:
             st.markdown(f"### {job['title']}")
             st.write(f"**{job['company'] or 'Unknown company'}**")
-            location_bits = [job.get("location"), job.get("platform")]
+            location_bits = [job.get("location"), platform_label(job.get("platform")) if job.get("platform") else None]
             details = " | ".join(bit for bit in location_bits if bit)
             if details:
                 st.caption(details)
@@ -1085,7 +1225,7 @@ def _render_job_card(job):
 
         footer_bits = [
             f"Language: {job.get('language_pref') or 'n/a'}",
-            f"Status: {normalize_application_status(job.get('pipeline_status') or job.get('status'))}",
+            f"Status: {format_application_status(job.get('pipeline_status') or job.get('status'))}",
         ]
         linked_application_id = job.get("application_id") or job.get("latest_application_id")
         if linked_application_id:
@@ -1118,7 +1258,10 @@ def _render_application_card(application):
         with top_left:
             st.markdown(f"### {application['position']}")
             st.write(f"**{application['company'] or 'Unknown company'}**")
-            location_bits = [application.get("location"), application.get("platform")]
+            location_bits = [
+                application.get("location"),
+                platform_label(application.get("platform")) if application.get("platform") else None,
+            ]
             details = " | ".join(bit for bit in location_bits if bit)
             if details:
                 st.caption(details)
@@ -1142,6 +1285,7 @@ def _render_application_card(application):
         doc_col1, doc_col2, doc_col3 = st.columns(3)
         cover_letter_path = _normalize_file_path(application.get("cl_pdf_path"))
         resume_path = _normalize_file_path(application.get("resume_pdf_path"))
+        extra_file_paths = _normalize_file_paths(application.get("extra_file_paths"))
 
         with doc_col1:
             cover_letter_bytes = _read_file_bytes(cover_letter_path)
@@ -1166,8 +1310,10 @@ def _render_application_card(application):
                     use_container_width=True,
                 )
         with doc_col3:
-            st.caption(f"Status: {normalize_application_status(application.get('status'))}")
+            st.caption(f"Status: {format_application_status(application.get('status'))}")
             st.caption(f"Refinement Passes: {max((application['iterations'] or 1) - 1, 0)}")
+            if extra_file_paths:
+                st.caption(f"Extra files: {len(extra_file_paths)}")
             if application.get("source_job_id"):
                 st.caption(f"Source job id: {application['source_job_id']}")
 

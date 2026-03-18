@@ -6,6 +6,7 @@ import streamlit as st
 
 from db import execute, execute_returning, fetch_one
 from local_store import sync_job_bundle
+from platforms import normalize_platform, platform_label, platform_select_options
 from semantic_search import embed_text, vector_literal
 
 
@@ -129,7 +130,7 @@ def normalize_job_data(data):
             "location": data.get("location") or "",
             "salary": data.get("salary") or "",
             "posted_date": data.get("posted_date") or data.get("date_posted") or "",
-            "platform": data.get("platform") or "",
+            "platform": normalize_platform(data.get("platform") or ""),
             "job_url": data.get("job_url") or data.get("url") or "",
             "language": data.get("language") or "de",
             "department": data.get("department") or data.get("hiring_manager") or "",
@@ -137,6 +138,39 @@ def normalize_job_data(data):
         }
     )
     return normalized
+
+
+def _job_identity(review):
+    return {
+        "company_name": re.sub(r"\s+", " ", (review.get("company_name") or "").strip()).casefold(),
+        "position": re.sub(r"\s+", " ", (review.get("position") or "").strip()).casefold(),
+        "location": re.sub(r"\s+", " ", (review.get("location") or "").strip()).casefold(),
+        "job_url": (review.get("job_url") or "").strip().casefold(),
+        "posted_date": (review.get("posted_date") or "").strip(),
+        "language": (review.get("language") or "de").strip().casefold(),
+        "platform": normalize_platform(review.get("platform") or ""),
+    }
+
+
+def remember_saved_job(prefix, job_id, review, editing=False):
+    st.session_state[f"{prefix}_saved_job_id"] = job_id
+    st.session_state[f"{prefix}_saved_job_identity"] = _job_identity(review)
+    if editing:
+        st.session_state[f"{prefix}_editing_job_id"] = job_id
+    else:
+        st.session_state.pop(f"{prefix}_editing_job_id", None)
+
+
+def clear_saved_job_binding(prefix, clear_application=False):
+    st.session_state.pop(f"{prefix}_saved_job_id", None)
+    st.session_state.pop(f"{prefix}_saved_job_identity", None)
+    st.session_state.pop(f"{prefix}_editing_job_id", None)
+    if clear_application:
+        st.session_state.pop(f"{prefix}_saved_application_id", None)
+
+
+def mark_job_for_edit(prefix, job_id, review):
+    remember_saved_job(prefix, job_id, review, editing=True)
 
 
 def seed_review_state(prefix, data=None, overwrite=False):
@@ -320,7 +354,13 @@ def _sync_job_storage(job_id, prefix, review, analysis, existing_screenshot_path
 
 def persist_job(prefix, review, analysis):
     posted_date = _parse_posted_date(review["posted_date"])
-    existing_id = st.session_state.get(f"{prefix}_saved_job_id")
+    raw_existing_id = st.session_state.get(f"{prefix}_saved_job_id")
+    existing_id = None
+    if raw_existing_id:
+        if st.session_state.get(f"{prefix}_editing_job_id") == raw_existing_id:
+            existing_id = raw_existing_id
+        elif st.session_state.get(f"{prefix}_saved_job_identity") == _job_identity(review):
+            existing_id = raw_existing_id
     keywords = analysis["required_skills"]
     embedding = embed_text(
         _build_embedding_text(review, analysis),
@@ -335,6 +375,10 @@ def persist_job(prefix, review, analysis):
                 "SELECT screenshot_paths FROM jobs WHERE id = %s",
                 (existing_id,),
             )
+            if not current:
+                existing_id = None
+
+        if existing_id:
             execute(
                 """
                 UPDATE jobs
@@ -378,6 +422,12 @@ def persist_job(prefix, review, analysis):
                 analysis,
                 existing_screenshot_paths=current["screenshot_paths"] if current else None,
             )
+            remember_saved_job(
+                prefix,
+                existing_id,
+                review,
+                editing=st.session_state.get(f"{prefix}_editing_job_id") == existing_id,
+            )
             return existing_id
 
         row = execute_returning(
@@ -407,7 +457,7 @@ def persist_job(prefix, review, analysis):
             ),
         )
         if row:
-            st.session_state[f"{prefix}_saved_job_id"] = row["id"]
+            remember_saved_job(prefix, row["id"], review)
             _sync_job_storage(row["id"], prefix, review, analysis)
             return row["id"]
     except Exception as exc:
@@ -441,8 +491,18 @@ def render_job_review_editor(prefix, panel_title, generate_label="Generate Cover
         st.caption("Optional")
         posted_date = st.text_input("Posted Date", key=f"{prefix}_posted_date", placeholder="20.02.2026")
         st.caption("Optional")
-        platform = st.text_input("Platform", key=f"{prefix}_platform", placeholder="LinkedIn")
-        st.caption("Optional")
+        platform_options = platform_select_options()
+        current_platform = normalize_platform(st.session_state.get(f"{prefix}_platform", ""))
+        if current_platform and current_platform not in platform_options:
+            current_platform = "other"
+        platform = st.selectbox(
+            "Platform",
+            platform_options,
+            key=f"{prefix}_platform",
+            index=platform_options.index(current_platform) if current_platform in platform_options else 0,
+            format_func=platform_label,
+        )
+        st.caption("Optional but helpful for tracking")
 
     with meta_col3:
         job_url = st.text_input("Job URL", key=f"{prefix}_job_url", placeholder="https://...")
@@ -472,7 +532,7 @@ def render_job_review_editor(prefix, panel_title, generate_label="Generate Cover
         "location": location,
         "salary": salary,
         "posted_date": posted_date,
-        "platform": platform,
+        "platform": normalize_platform(platform),
         "job_url": job_url,
         "language": language,
         "department": department,

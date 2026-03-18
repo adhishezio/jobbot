@@ -7,7 +7,14 @@ import streamlit as st
 
 from components import show_address_confirmation_card
 from duplicate_detection import find_possible_duplicates
-from job_review import FIELD_DEFAULTS, build_generation_payload, persist_job, render_job_review_editor, seed_review_state
+from job_review import (
+    FIELD_DEFAULTS,
+    build_generation_payload,
+    clear_saved_job_binding,
+    persist_job,
+    render_job_review_editor,
+    seed_review_state,
+)
 from post_generation import poll_cover_letter_completion, render_generated_cover_letter, start_cover_letter_generation
 from screenshot_tab import render_screenshot_upload_tab
 from uploaded_application import render_uploaded_application_panel
@@ -29,7 +36,7 @@ with st.sidebar:
 def _reset_review_state(prefix):
     for field, default_value in FIELD_DEFAULTS.items():
         st.session_state[f"{prefix}_{field}"] = default_value
-    st.session_state.pop(f"{prefix}_saved_job_id", None)
+    clear_saved_job_binding(prefix, clear_application=True)
     st.session_state.pop(f"{prefix}_duplicate_matches", None)
     st.session_state.pop(f"{prefix}_duplicate_request", None)
     st.session_state.pop(f"{prefix}_duplicate_override", None)
@@ -99,13 +106,6 @@ def _render_duplicate_warning(prefix, clear_extracted=False):
 
 
 def _extract_from_paste(raw_text):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        st.error("GEMINI_API_KEY is missing from your environment variables.")
-        return None
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
     prompt = f"""
     You are a data extraction assistant. Extract job posting information from the
     raw text below. The text may contain navigation menus, cookie notices, ads,
@@ -126,8 +126,16 @@ def _extract_from_paste(raw_text):
     {raw_text}
     """
 
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        st.error("Configure GEMINI_API_KEY in .env for the extraction features.")
+        return None
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
     cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
+
     return json.loads(cleaned_text)
 
 
@@ -171,6 +179,7 @@ with tab1:
                 try:
                     extracted = _extract_from_paste(raw_text)
                     st.session_state["extracted_paste_data"] = extracted
+                    clear_saved_job_binding("paste", clear_application=True)
                     seed_review_state("paste", extracted, overwrite=True)
                     st.rerun()
                 except Exception as exc:

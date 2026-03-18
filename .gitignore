@@ -20,6 +20,7 @@ New folder/
 assets/*
 !assets/.gitkeep
 !assets/README.md
+templates/*.local.tex
 
 Adhish_Resume_Data_Scientist_latex.pdf
 final_output.pdf
@@ -30,3 +31,4 @@ tmp_cover_letter.tex
 .pytest_cache/
 .mypy_cache/
 .DS_Store
+scripts/_*.py

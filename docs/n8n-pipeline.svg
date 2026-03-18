@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="360" viewBox="0 0 1800 360" role="img" aria-labelledby="title desc">
+  <title id="title">JobBot n8n Pipeline</title>
+  <desc id="desc">Public-safe overview of the JobBot cover-letter workflow.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7fafc; }
+      .card { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 18; ry: 18; }
+      .primary { fill: #e0f2fe; stroke: #7dd3fc; }
+      .decision { fill: #fef3c7; stroke: #f59e0b; }
+      .notify { fill: #dcfce7; stroke: #4ade80; }
+      .text { font-family: Segoe UI, Arial, sans-serif; font-size: 18px; fill: #0f172a; font-weight: 600; }
+      .sub { font-family: Segoe UI, Arial, sans-serif; font-size: 13px; fill: #475569; }
+      .line { stroke: #64748b; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .loop { stroke: #8b5cf6; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .title { font-family: Segoe UI, Arial, sans-serif; font-size: 28px; fill: #0f172a; font-weight: 700; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1800" height="360" />
+  <text class="title" x="40" y="46">JobBot Cover-Letter Pipeline</text>
+
+  <rect class="card primary" x="40" y="110" width="140" height="76" />
+  <text class="text" x="73" y="152">Webhook</text>
+  <text class="sub" x="61" y="174">Start request</text>
+
+  <rect class="card" x="220" y="110" width="170" height="76" />
+  <text class="text" x="263" y="148">SerpAPI</text>
+  <text class="sub" x="241" y="170">Find company address</text>
+
+  <rect class="card" x="430" y="110" width="190" height="76" />
+  <text class="text" x="462" y="148">Parse Address</text>
+  <text class="sub" x="447" y="170">Rank & clean result</text>
+
+  <rect class="card notify" x="660" y="100" width="220" height="96" />
+  <text class="text" x="690" y="142">JobBot Address Review</text>
+  <text class="sub" x="701" y="164">Confirm, edit, or add</text>
+  <text class="sub" x="742" y="184">inside Streamlit</text>
+
+  <rect class="card" x="920" y="110" width="180" height="76" />
+  <text class="text" x="943" y="148">Resume & Job Data</text>
+  <text class="sub" x="957" y="170">Template + profile</text>
+
+  <rect class="card primary" x="1140" y="110" width="180" height="76" />
+  <text class="text" x="1183" y="148">Generator</text>
+  <text class="sub" x="1168" y="170">Gemini / Vertex draft</text>
+
+  <rect class="card primary" x="1360" y="110" width="160" height="76" />
+  <text class="text" x="1411" y="148">Critic</text>
+  <text class="sub" x="1390" y="170">Score + issues</text>
+
+  <rect class="card decision" x="1560" y="100" width="180" height="96" />
+  <text class="text" x="1598" y="142">Quality Gate</text>
+  <text class="sub" x="1605" y="164">Pass or refine</text>
+  <text class="sub" x="1598" y="184">until good enough</text>
+
+  <rect class="card" x="1140" y="248" width="180" height="76" />
+  <text class="text" x="1189" y="286">Refiner</text>
+  <text class="sub" x="1169" y="308">Improves weak spots</text>
+
+  <rect class="card" x="1360" y="248" width="170" height="76" />
+  <text class="text" x="1386" y="286">Template + PDF</text>
+  <text class="sub" x="1402" y="308">LaTeX compile</text>
+
+  <rect class="card notify" x="1570" y="248" width="190" height="76" />
+  <text class="text" x="1617" y="286">Save + Notify</text>
+  <text class="sub" x="1603" y="308">DB, PDF, Telegram</text>
+
+  <path class="line" d="M180 148 H220" />
+  <path class="line" d="M390 148 H430" />
+  <path class="line" d="M620 148 H660" />
+  <path class="line" d="M880 148 H920" />
+  <path class="line" d="M1100 148 H1140" />
+  <path class="line" d="M1320 148 H1360" />
+  <path class="line" d="M1520 148 H1560" />
+  <path class="line" d="M1650 196 V248 H1530" />
+  <path class="loop" d="M1140 286 H1080 V148 H1140" />
+  <path class="line" d="M1530 286 H1570" />
+</svg>

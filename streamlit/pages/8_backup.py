@@ -1,25 +1,13 @@
-import json
-import os
 from datetime import datetime
 
 import streamlit as st
 
+from backup_runtime import backup_available, load_backup_status, run_backup
 from components import show_address_confirmation_card
 from ui import apply_ui_theme
 
 
 BACKUP_TARGET = r"F:\jobbot_backup\current"
-STATUS_PATH = "/files/backup_status.json"
-
-
-def _load_backup_status():
-    if not os.path.exists(STATUS_PATH):
-        return None
-    try:
-        with open(STATUS_PATH, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return None
 
 
 def _format_timestamp(value):
@@ -38,7 +26,7 @@ st.title("💾 Backup & Recovery")
 with st.sidebar:
     show_address_confirmation_card()
 
-status = _load_backup_status()
+status = load_backup_status()
 
 st.markdown(
     """
@@ -61,7 +49,19 @@ else:
     st.warning("No verified host-side backup status found yet. Run the Windows backup script once.")
 
 st.subheader("Manual Backup")
-st.write("Run this on the Windows host machine:")
+manual_col1, manual_col2 = st.columns([1, 1])
+if manual_col1.button("Run Manual Backup Now", type="primary", use_container_width=True):
+    with st.spinner("Creating the rotating backup on the external drive..."):
+        try:
+            manifest = run_backup(trigger="manual_ui")
+            st.success(f"Backup completed at {manifest['created_at']}.")
+            st.rerun()
+        except Exception as exc:
+            st.error(str(exc))
+
+manual_col2.metric("Drive Mounted", "Yes" if backup_available() else "No")
+
+st.write("You can also run the same backup from the Windows host machine:")
 st.code(
     r"powershell -ExecutionPolicy Bypass -File .\scripts\backup_jobbot.ps1",
     language="powershell",

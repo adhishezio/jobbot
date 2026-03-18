@@ -21,8 +21,20 @@ def _metric_value(query):
     return row["value"] if row else 0
 
 
-total_jobs = _metric_value("SELECT COUNT(*) AS value FROM jobs")
-total_applications = _metric_value("SELECT COUNT(*) AS value FROM applications")
+total_jobs = _metric_value(
+    """
+    SELECT COUNT(*) AS value
+    FROM jobs
+    WHERE LOWER(COALESCE(status, 'pending')) IN ('', 'new', 'drafted', 'pending', 'application_saved')
+    """
+)
+total_applications = _metric_value(
+    """
+    SELECT COUNT(*) AS value
+    FROM applications
+    WHERE LOWER(COALESCE(status, 'pending')) NOT IN ('drafted', 'pending', 'application_saved')
+    """
+)
 unread_notifications = _metric_value("SELECT COUNT(*) AS value FROM email_analyses WHERE is_unread = TRUE")
 recent_cover_letters = _metric_value(
     "SELECT COUNT(*) AS value FROM cover_letters WHERE created_at > NOW() - INTERVAL '7 days'"
@@ -33,7 +45,7 @@ pending_confirmations = _metric_value(
 
 metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
 metric_col1.metric("Saved Jobs", total_jobs)
-metric_col2.metric("Applications", total_applications)
+metric_col2.metric("Applied Jobs", total_applications)
 metric_col3.metric("Unread Alerts", unread_notifications)
 metric_col4.metric("Cover Letters (7d)", recent_cover_letters)
 metric_col5.metric("Pending Address Checks", pending_confirmations)

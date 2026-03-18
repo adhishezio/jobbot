@@ -5,6 +5,7 @@ import streamlit as st
 
 from components import show_address_confirmation_card
 from db import fetch_all, fetch_one
+from platforms import platform_label
 from ui import apply_ui_theme
 
 
@@ -50,7 +51,7 @@ funnel_values = [status_counts.get(stage, 0) for stage in STAGE_COLORS]
 
 funnel_fig = go.Figure(
     go.Funnel(
-        y=list(STAGE_COLORS.keys()),
+        y=[stage.title() for stage in STAGE_COLORS.keys()],
         x=funnel_values,
         textinfo="value+percent initial",
         marker={"color": list(STAGE_COLORS.values())},
@@ -67,7 +68,7 @@ for index in range(len(funnel_values) - 1):
             "y": index + 0.45,
             "xref": "x",
             "yref": "y",
-            "text": f"{list(STAGE_COLORS.keys())[index]} → {list(STAGE_COLORS.keys())[index + 1]}: {rate}%",
+            "text": f"{list(STAGE_COLORS.keys())[index].title()} -> {list(STAGE_COLORS.keys())[index + 1].title()}: {rate}%",
             "showarrow": False,
             "font": {"size": 12},
         }
@@ -133,7 +134,7 @@ platform_rows = fetch_all(
 )
 platform_fig = go.Figure(
     go.Pie(
-        labels=[row["platform_name"] for row in platform_rows],
+        labels=[platform_label(row["platform_name"]) for row in platform_rows],
         values=[row["count"] for row in platform_rows],
         hole=0.35,
     )

@@ -67,6 +67,7 @@ CREATE TABLE applications (
   notes             TEXT,
   platform          VARCHAR(50),
   resume_pdf_path   VARCHAR(500),
+  extra_file_paths  TEXT[],
   local_folder_path VARCHAR(500),
   cover_letter_id   INTEGER,
   source_job_id     INTEGER REFERENCES jobs(id),

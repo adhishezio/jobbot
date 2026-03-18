@@ -8,25 +8,18 @@ import streamlit as st
 from PIL import Image
 
 from duplicate_detection import find_possible_duplicates
-from job_review import build_generation_payload, persist_job, render_job_review_editor, seed_review_state
+from job_review import (
+    build_generation_payload,
+    clear_saved_job_binding,
+    persist_job,
+    render_job_review_editor,
+    seed_review_state,
+)
 from post_generation import start_cover_letter_generation
 from uploaded_application import render_uploaded_application_panel
 
 
 def extract_job_details(uploaded_files):
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        st.error("GEMINI_API_KEY is missing from your environment variables.")
-        return None
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
-
-    images = []
-    for file_handle in uploaded_files:
-        image = Image.open(io.BytesIO(file_handle.getvalue()))
-        images.append(image)
-
     prompt = """
     Analyze these screenshots of a job posting. They may be out of order.
     Extract the information into a valid JSON object with EXACTLY these keys:
@@ -45,6 +38,19 @@ def extract_job_details(uploaded_files):
     """
 
     try:
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            st.error("Configure GEMINI_API_KEY in .env for the extraction features.")
+            return None
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+
+        images = []
+        for file_handle in uploaded_files:
+            image = Image.open(io.BytesIO(file_handle.getvalue()))
+            images.append(image)
+
         response = model.generate_content([prompt, *images])
         cleaned_text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(cleaned_text)
@@ -138,6 +144,7 @@ def render_screenshot_upload_tab():
                 result = extract_job_details(uploaded_files)
                 if result:
                     st.session_state["extracted_data"] = result
+                    clear_saved_job_binding("upload", clear_application=True)
                     seed_review_state("upload", result, overwrite=True)
                     st.rerun()
 
