@@ -25,18 +25,6 @@ It gives you one place to:
 
 ![JobBot n8n Pipeline](docs/n8n-pipeline.svg)
 
-## What Stays Local
-
-This repo is safe to keep public, but some files should stay only on your machine.
-
-Keep these out of git:
-- `.env`
-- `secrets/`
-- `files/`
-- `n8n/` exports
-- personal assets like `assets/signature.png`
-- `templates/cover_letter_template.local.tex`
-
 ## Quick Start
 
 1. Clone the repo.
@@ -75,7 +63,8 @@ powershell -ExecutionPolicy Bypass -File .\scriptsackup_jobbot.ps1
 Register the automatic Windows task:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scriptsegister_backup_task.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts
+egister_backup_task.ps1
 ```
 
 Backups are written to:
