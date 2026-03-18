@@ -26,6 +26,17 @@ INSERT INTO settings (key, value) VALUES (
   'Add your own resume summary here, or replace /files/master_resume.txt with your structured resume text before generating cover letters.'
 ) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
+INSERT INTO settings (key, value) VALUES
+  ('ai_provider', 'vertex'),
+  ('gemini_key_slot', 'GEMINI_API_KEY1'),
+  ('google_generator_model', 'gemini-2.5-flash'),
+  ('google_critic_model', 'gemini-2.5-flash'),
+  ('google_refiner_model', 'gemini-2.5-flash'),
+  ('vertex_generator_model', 'gemini-2.5-pro'),
+  ('vertex_critic_model', 'gemini-2.5-flash'),
+  ('vertex_refiner_model', 'gemini-2.5-pro')
+ON CONFLICT (key) DO NOTHING;
+
 -- 3. Jobs Table
 CREATE TABLE jobs (
   id                SERIAL PRIMARY KEY,

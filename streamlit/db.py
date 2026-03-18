@@ -218,3 +218,24 @@ def execute_returning(query, params=None):
 def fetch_settings():
     rows = fetch_all("SELECT key, value FROM settings")
     return {row["key"]: row["value"] for row in rows} if rows else {}
+
+
+def fetch_setting(key, default=None):
+    row = fetch_one("SELECT value FROM settings WHERE key = %s", (key,))
+    return row["value"] if row and row.get("value") is not None else default
+
+
+def save_setting(key, value):
+    execute(
+        """
+        INSERT INTO settings (key, value)
+        VALUES (%s, %s)
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value
+        """,
+        (key, value),
+    )
+
+
+def delete_setting(key):
+    execute("DELETE FROM settings WHERE key = %s", (key,))

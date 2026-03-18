@@ -15,7 +15,7 @@ _STAGE_MAP = {
     "Process Address Result": (0.36, "Preparing Application Data"),
     "Fetch Job Summary": (0.42, "Loading Saved Job Context"),
     "Read Resume & Merge Data": (0.48, "Loading Resume And Template"),
-    "Get Vertex Access Token": (0.54, "Authenticating Vertex AI"),
+    "Get Vertex Access Token": (0.54, "Preparing AI Provider Access"),
     "Build Generator Request": (0.58, "Preparing Generator Prompt"),
     "GENERATOR": (0.64, "Generating First Draft"),
     "Build Critic Request": (0.72, "Preparing Critic Review"),

@@ -4,6 +4,7 @@ from datetime import datetime
 
 import streamlit as st
 
+from ai_settings import build_generation_ai_payload
 from db import execute, execute_returning, fetch_one
 from local_store import sync_job_bundle
 from platforms import normalize_platform, platform_label, platform_select_options
@@ -288,6 +289,7 @@ def build_generation_payload(review, analysis, job_id=None):
         "keywords": analysis["required_skills"],
         "jd_summary": analysis["summary"],
     }
+    payload.update(build_generation_ai_payload())
     if job_id:
         payload["job_id"] = job_id
     return payload

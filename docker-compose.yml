@@ -51,7 +51,8 @@ services:
       - n8n_data:/home/node/.n8n
       - ./files:/files
       - ./templates:/templates
-      - ./assets:/assets   
+      - ./assets:/assets
+      - ./secrets:/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy

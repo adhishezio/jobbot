@@ -5,6 +5,7 @@ import google.generativeai as genai
 import pandas as pd
 import streamlit as st
 
+from ai_settings import load_ai_settings, resolve_gemini_api_key
 from components import show_address_confirmation_card
 from duplicate_detection import find_possible_duplicates
 from job_review import (
@@ -126,9 +127,10 @@ def _extract_from_paste(raw_text):
     {raw_text}
     """
 
-    api_key = os.environ.get("GEMINI_API_KEY")
+    settings = load_ai_settings()
+    api_key = resolve_gemini_api_key(settings.get("gemini_key_slot"))
     if not api_key:
-        st.error("Configure GEMINI_API_KEY in .env for the extraction features.")
+        st.error("Configure at least one Gemini API key in .env or in Settings for the extraction features.")
         return None
 
     genai.configure(api_key=api_key)

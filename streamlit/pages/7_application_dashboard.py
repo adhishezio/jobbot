@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components import show_address_confirmation_card
-from db import fetch_all, fetch_one
+from db import fetch_all
 from platforms import platform_label
 from ui import apply_ui_theme
 
@@ -103,27 +103,6 @@ score_fig = go.Figure(
 score_fig.update_layout(title="Cover Letter Score Distribution", margin={"l": 10, "r": 10, "t": 40, "b": 10})
 _transparent_layout(score_fig)
 
-timeline_rows = fetch_all(
-    """
-    SELECT DATE_TRUNC('week', created_at) AS week, COUNT(*) AS count
-    FROM applications
-    WHERE created_at >= NOW() - INTERVAL '12 weeks'
-    GROUP BY week
-    ORDER BY week
-    """
-)
-timeline_fig = go.Figure(
-    go.Scatter(
-        x=[row["week"] for row in timeline_rows],
-        y=[row["count"] for row in timeline_rows],
-        mode="lines+markers",
-        line={"color": "#7ED321", "width": 3},
-        marker={"size": 8},
-    )
-)
-timeline_fig.update_layout(title="Applications Submitted per Week", margin={"l": 10, "r": 10, "t": 40, "b": 10})
-_transparent_layout(timeline_fig)
-
 platform_rows = fetch_all(
     """
     SELECT COALESCE(NULLIF(platform, ''), 'other') AS platform_name, COUNT(*) AS count
@@ -142,28 +121,6 @@ platform_fig = go.Figure(
 platform_fig.update_layout(title="Platform Breakdown", margin={"l": 10, "r": 10, "t": 40, "b": 10})
 _transparent_layout(platform_fig)
 
-total_applications_row = fetch_one("SELECT COUNT(*) AS value FROM applications")
-interview_rate_row = fetch_one(
-    """
-    SELECT
-        CASE WHEN COUNT(*) = 0 THEN 0
-             ELSE ROUND(
-                (SUM(CASE WHEN status IN ('interview', 'offer') THEN 1 ELSE 0 END)::numeric / COUNT(*)) * 100,
-                1
-             )
-        END AS value
-    FROM applications
-    """
-)
-average_score_row = fetch_one("SELECT ROUND(AVG(match_score)::numeric, 1) AS value FROM jobs")
-open_applications_row = fetch_one("SELECT COUNT(*) AS value FROM applications WHERE status = 'applied'")
-
-kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
-kpi_col1.metric("Total Applications", total_applications_row["value"] if total_applications_row else 0)
-kpi_col2.metric("Interview Rate", f"{interview_rate_row['value'] if interview_rate_row else 0}%")
-kpi_col3.metric("Average Match Score", average_score_row["value"] if average_score_row and average_score_row["value"] else 0)
-kpi_col4.metric("Open Applications", open_applications_row["value"] if open_applications_row else 0)
-
 top_left, top_right = st.columns(2)
 with top_left:
     st.subheader("Funnel")
@@ -175,6 +132,39 @@ with top_right:
 bottom_left, bottom_right = st.columns(2)
 with bottom_left:
     st.subheader("Activity Timeline")
+    timeline_grain = st.segmented_control(
+        "View",
+        options=["Daily", "Weekly", "Monthly"],
+        default="Weekly",
+        selection_mode="single",
+        key="dashboard_timeline_grain",
+    )
+    grain_map = {
+        "Daily": ("day", "30 days", "Applications Per Day"),
+        "Weekly": ("week", "12 weeks", "Applications Per Week"),
+        "Monthly": ("month", "12 months", "Applications Per Month"),
+    }
+    grain, lookback, title = grain_map[timeline_grain]
+    timeline_rows = fetch_all(
+        f"""
+        SELECT DATE_TRUNC('{grain}', created_at) AS bucket, COUNT(*) AS count
+        FROM applications
+        WHERE created_at >= NOW() - INTERVAL '{lookback}'
+        GROUP BY bucket
+        ORDER BY bucket
+        """
+    )
+    timeline_fig = go.Figure(
+        go.Scatter(
+            x=[row["bucket"] for row in timeline_rows],
+            y=[row["count"] for row in timeline_rows],
+            mode="lines+markers",
+            line={"color": "#7ED321", "width": 3},
+            marker={"size": 8},
+        )
+    )
+    timeline_fig.update_layout(title=title, margin={"l": 10, "r": 10, "t": 40, "b": 10})
+    _transparent_layout(timeline_fig)
     st.plotly_chart(timeline_fig, use_container_width=True)
 with bottom_right:
     st.subheader("Platform Breakdown")

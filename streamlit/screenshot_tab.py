@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 
+from ai_settings import load_ai_settings, resolve_gemini_api_key
 from duplicate_detection import find_possible_duplicates
 from job_review import (
     build_generation_payload,
@@ -38,9 +39,10 @@ def extract_job_details(uploaded_files):
     """
 
     try:
-        api_key = os.environ.get("GEMINI_API_KEY")
+        settings = load_ai_settings()
+        api_key = resolve_gemini_api_key(settings.get("gemini_key_slot"))
         if not api_key:
-            st.error("Configure GEMINI_API_KEY in .env for the extraction features.")
+            st.error("Configure at least one Gemini API key in .env or in Settings for the extraction features.")
             return None
 
         genai.configure(api_key=api_key)
