@@ -9,6 +9,7 @@ from ai_settings import (
     save_ai_settings,
 )
 from components import show_address_confirmation_card
+from master_resume_store import load_master_resume, resume_metadata, save_master_resume
 from ui import apply_ui_theme
 
 
@@ -25,6 +26,9 @@ with st.sidebar:
 settings = load_ai_settings()
 slots = available_gemini_key_slots()
 slot_labels = list(slots.keys()) or ["GEMINI_API_KEY1"]
+
+if "settings_master_resume_text" not in st.session_state:
+    st.session_state["settings_master_resume_text"] = load_master_resume()
 
 provider_toggle = st.toggle(
     "Use Vertex AI For Cover-Letter Generation",
@@ -127,4 +131,51 @@ if save_col.button("Save Settings", type="primary", use_container_width=True):
 if reset_col.button("Reset To Default", use_container_width=True):
     reset_ai_settings()
     st.success("Settings reset to the default provider and models.")
+    st.rerun()
+
+st.divider()
+st.subheader("Master Resume Editor")
+st.caption(
+    "Edit the main resume text JobBot uses for match scoring and cover-letter evidence. "
+    "The next cover-letter run will use this updated file directly."
+)
+
+resume_meta = resume_metadata()
+last_updated = (
+    resume_meta["last_modified"].strftime("%d %b %Y %H:%M")
+    if resume_meta["last_modified"]
+    else "Not saved yet"
+)
+st.caption(
+    f"Source: `{resume_meta['path']}` | Last updated: {last_updated} | "
+    f"{resume_meta['line_count']} lines | {resume_meta['char_count']} characters"
+)
+st.info(
+    "You do not need to rebuild Docker after saving here. JobBot reads this mounted file directly on the next run."
+)
+
+st.text_area(
+    "Master Resume / Experience Source",
+    key="settings_master_resume_text",
+    height=460,
+    help="Keep this structured and up to date. Add projects, experience, skills, achievements, and education here.",
+)
+
+resume_save_col, resume_reload_col = st.columns(2)
+if resume_save_col.button("Save Resume And Apply", type="primary", use_container_width=True):
+    try:
+        result = save_master_resume(st.session_state["settings_master_resume_text"])
+        backup_note = f" Backup saved to `{result['backup_path']}`." if result.get("backup_path") else ""
+        st.success(
+            "Master resume updated successfully. The next cover-letter generation will use it immediately."
+            + backup_note
+        )
+        st.session_state["settings_master_resume_text"] = load_master_resume()
+        st.rerun()
+    except Exception as exc:
+        st.error(f"Could not save the master resume: {exc}")
+
+if resume_reload_col.button("Reload Resume From Disk", use_container_width=True):
+    st.session_state["settings_master_resume_text"] = load_master_resume()
+    st.success("Reloaded the latest saved master resume from disk.")
     st.rerun()
